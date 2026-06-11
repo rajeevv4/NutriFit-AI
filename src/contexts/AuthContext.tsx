@@ -43,8 +43,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const signUp = async (email: string, password: string, fullName: string) => {
     try {
       const redirectUrl = `${window.location.origin}/`;
+      console.log("[AuthContext] Initiating signup process:", { email, fullName, redirectUrl });
       
-      const { error } = await supabase.auth.signUp({
+      const response = await supabase.auth.signUp({
         email,
         password,
         options: {
@@ -55,7 +56,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         },
       });
 
+      console.log("[AuthContext] Supabase signup response:", response);
+      const { error, data } = response;
+
       if (error) {
+        console.error("[AuthContext] Signup failed with Supabase error:", error);
         toast({
           variant: "destructive",
           title: "Sign up failed",
@@ -64,6 +69,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         return { error };
       }
 
+      console.log("[AuthContext] Signup successfully completed:", data);
       toast({
         title: "Success!",
         description: "Please check your email to confirm your account.",
@@ -71,10 +77,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       
       return { error: null };
     } catch (error: any) {
+      console.error("[AuthContext] Signup caught unexpected exception:", error);
+      if (error instanceof TypeError || error.message?.includes("fetch")) {
+        console.error("[AuthContext] Network or CORS failure suspected. Ensure Supabase URL is correct and reachable.", {
+          supabaseUrl: import.meta.env.VITE_SUPABASE_URL || "https://vuknaijjzkkputjbtnce.supabase.co",
+          error
+        });
+      }
       toast({
         variant: "destructive",
         title: "Sign up failed",
-        description: error.message,
+        description: error.message || "Network error or connection refused.",
       });
       return { error };
     }
@@ -82,12 +95,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const signIn = async (email: string, password: string) => {
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      console.log("[AuthContext] Initiating signin process for email:", email);
+      const response = await supabase.auth.signInWithPassword({
         email,
         password,
       });
+      console.log("[AuthContext] Supabase signin response:", response);
+      const { error, data } = response;
 
       if (error) {
+        console.error("[AuthContext] Signin failed with Supabase error:", error);
         toast({
           variant: "destructive",
           title: "Sign in failed",
@@ -96,6 +113,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         return { error };
       }
 
+      console.log("[AuthContext] Signin successfully completed:", data);
       toast({
         title: "Welcome back!",
         description: "You have successfully signed in.",
@@ -103,10 +121,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
       return { error: null };
     } catch (error: any) {
+      console.error("[AuthContext] Signin caught unexpected exception:", error);
+      if (error instanceof TypeError || error.message?.includes("fetch")) {
+        console.error("[AuthContext] Network or CORS failure suspected. Ensure Supabase URL is correct and reachable.", {
+          supabaseUrl: import.meta.env.VITE_SUPABASE_URL || "https://vuknaijjzkkputjbtnce.supabase.co",
+          error
+        });
+      }
       toast({
         variant: "destructive",
         title: "Sign in failed",
-        description: error.message,
+        description: error.message || "Network error or connection refused.",
       });
       return { error };
     }
