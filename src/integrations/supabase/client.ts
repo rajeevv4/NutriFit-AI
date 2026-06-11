@@ -154,6 +154,36 @@ class MockSupabase {
   functions = {
     invoke: async (name: string, options: any) => {
       console.log(`[MockSupabase] Invoking function ${name} with options:`, options);
+      if (name === 'google-fit-auth-url') {
+        return { data: { authUrl: window.location.origin + "/oauth2-callback?code=mock-auth-code" }, error: null };
+      }
+      if (name === 'google-fit-callback') {
+        const tokenKey = `mock_table_google_fit_tokens`;
+        const defaultToken = [
+          { id: "mock-token-id", user_id: "mock-user-id-12345", created_at: new Date().toISOString() }
+        ];
+        localStorage.setItem(tokenKey, JSON.stringify(defaultToken));
+        return { data: { success: true }, error: null };
+      }
+      if (name === 'google-fit-sync') {
+        const steps = Math.round(8000 + Math.random() * 4000);
+        const calories = Math.round(1800 + Math.random() * 600);
+        const heartRate = Math.round(65 + Math.random() * 20);
+        const activeMinutes = Math.round(45 + Math.random() * 60);
+        
+        const fitnessRecord = {
+          id: "mock-fit-id",
+          user_id: "mock-user-id-12345",
+          date: new Date().toISOString().split('T')[0],
+          steps,
+          calories,
+          heart_rate: heartRate,
+          active_minutes: activeMinutes,
+          distance: Math.round(steps * 0.75),
+        };
+        localStorage.setItem("mock_fitness_data", JSON.stringify(fitnessRecord));
+        return { data: { success: true }, error: null };
+      }
       if (name === 'suggest-mood-foods') {
         return { 
           data: { 
@@ -169,12 +199,14 @@ class MockSupabase {
       if (name === 'analyze-food-photo') {
         return {
           data: {
-            meal_name: "Healthy Salad Bowl",
-            total_calories: 350,
-            protein: 15,
-            carbs: 25,
-            fat: 10,
-            insights: "Excellent source of fiber and vitamins!"
+            analysis: {
+              total_calories: 350,
+              protein: 15,
+              carbs: 25,
+              fats: 10,
+              confidence: 88,
+              food_items: ["Healthy Salad Bowl"]
+            }
           },
           error: null
         };
@@ -200,7 +232,27 @@ class MockSupabase {
       };
     } 
     if (table === 'fitness_data') {
-      return { id: "mock-fit-id", user_id: "mock-user-id-12345", date: new Date().toISOString().split('T')[0], steps: 9420, calories: 1540 };
+      const stored = localStorage.getItem("mock_fitness_data");
+      if (stored) return JSON.parse(stored);
+      
+      return { 
+        id: "mock-fit-id", 
+        user_id: "mock-user-id-12345", 
+        date: new Date().toISOString().split('T')[0], 
+        steps: 9420, 
+        calories: 1540,
+        heart_rate: 72,
+        active_minutes: 85,
+        distance: 7000
+      };
+    }
+    if (table === 'google_fit_tokens') {
+      const stored = localStorage.getItem("mock_table_google_fit_tokens");
+      if (stored) {
+        const list = JSON.parse(stored);
+        return list.length > 0 ? list[0] : null;
+      }
+      return null;
     }
     return null;
   }
