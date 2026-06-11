@@ -79,30 +79,73 @@ class MockSupabase {
   }
 
   from(table: string) {
+    let lastOperationData: any = null;
+    let isMutation = false;
+
     const queryBuilder: any = {
       select: () => queryBuilder,
       insert: (data: any) => {
         console.log(`[MockSupabase] Inserted to ${table}:`, data);
-        return Promise.resolve({ data, error: null });
+        const list = this._getMockTableData(table);
+        const newRecord = {
+          id: Math.random().toString(36).substring(2, 9),
+          created_at: new Date().toISOString(),
+          ...data
+        };
+        list.unshift(newRecord);
+        localStorage.setItem(`mock_table_${table}`, JSON.stringify(list));
+        lastOperationData = newRecord;
+        isMutation = true;
+        return queryBuilder;
       },
       update: (data: any) => {
         console.log(`[MockSupabase] Updated in ${table}:`, data);
-        return Promise.resolve({ data, error: null });
+        if (table === 'profiles') {
+          const current = this._getMockTableSingle('profiles') || {};
+          const updated = { ...current, ...data };
+          localStorage.setItem("mock_profile", JSON.stringify(updated));
+          lastOperationData = updated;
+        } else {
+          lastOperationData = data;
+        }
+        isMutation = true;
+        return queryBuilder;
       },
       upsert: (data: any) => {
         console.log(`[MockSupabase] Upserted in ${table}:`, data);
-        return Promise.resolve({ data, error: null });
+        if (table === 'profiles') {
+          const current = this._getMockTableSingle('profiles') || {};
+          const updated = { ...current, ...data };
+          localStorage.setItem("mock_profile", JSON.stringify(updated));
+          lastOperationData = updated;
+        } else {
+          lastOperationData = data;
+        }
+        isMutation = true;
+        return queryBuilder;
       },
-      delete: () => queryBuilder,
+      delete: () => {
+        isMutation = true;
+        lastOperationData = {};
+        return queryBuilder;
+      },
       eq: () => queryBuilder,
       gte: () => queryBuilder,
       lte: () => queryBuilder,
       order: () => queryBuilder,
-      single: () => Promise.resolve({ data: this._getMockTableSingle(table), error: null }),
-      maybeSingle: () => Promise.resolve({ data: this._getMockTableSingle(table), error: null }),
+      single: () => {
+        const data = isMutation ? lastOperationData : this._getMockTableSingle(table);
+        return Promise.resolve({ data, error: null });
+      },
+      maybeSingle: () => {
+        const data = isMutation ? lastOperationData : this._getMockTableSingle(table);
+        return Promise.resolve({ data, error: null });
+      },
       then: (onfulfilled: any) => {
-        const mockData = this._getMockTableData(table);
-        return Promise.resolve({ data: mockData, error: null }).then(onfulfilled);
+        const resolvedValue = isMutation 
+          ? { data: lastOperationData, error: null }
+          : { data: this._getMockTableData(table), error: null };
+        return Promise.resolve(resolvedValue).then(onfulfilled);
       }
     };
     return queryBuilder;
@@ -111,13 +154,50 @@ class MockSupabase {
   functions = {
     invoke: async (name: string, options: any) => {
       console.log(`[MockSupabase] Invoking function ${name} with options:`, options);
+      if (name === 'suggest-mood-foods') {
+        return { 
+          data: { 
+            suggestions: [
+              "A handful of walnuts and a banana for steady mood and energy booster.",
+              "Green tea with a piece of dark chocolate to ease stress levels.",
+              "Greek yogurt with berries for sustained energy release."
+            ] 
+          }, 
+          error: null 
+        };
+      }
+      if (name === 'analyze-food-photo') {
+        return {
+          data: {
+            meal_name: "Healthy Salad Bowl",
+            total_calories: 350,
+            protein: 15,
+            carbs: 25,
+            fat: 10,
+            insights: "Excellent source of fiber and vitamins!"
+          },
+          error: null
+        };
+      }
       return { data: { message: "Mock response" }, error: null };
     }
   };
 
   _getMockTableSingle(table: string) {
     if (table === 'profiles') {
-      return { id: "mock-user-id-12345", full_name: "Developer User", weight: 70, height: 175 };
+      const stored = localStorage.getItem("mock_profile");
+      if (stored) return JSON.parse(stored);
+      
+      const sessionStr = localStorage.getItem("mock_session");
+      const session = sessionStr ? JSON.parse(sessionStr) : null;
+      return { 
+        id: session?.user?.id || "mock-user-id-12345", 
+        full_name: session?.user?.user_metadata?.full_name || "Developer User", 
+        weight: 73, 
+        height: 176,
+        age: 21,
+        fitness_goals: "loose weight and gain muscles"
+      };
     } 
     if (table === 'fitness_data') {
       return { id: "mock-fit-id", user_id: "mock-user-id-12345", date: new Date().toISOString().split('T')[0], steps: 9420, calories: 1540 };
@@ -126,19 +206,28 @@ class MockSupabase {
   }
 
   _getMockTableData(table: string) {
+    const key = `mock_table_${table}`;
+    const stored = localStorage.getItem(key);
+    if (stored) return JSON.parse(stored);
+
+    let defaultData: any[] = [];
     if (table === 'water_logs') {
-      return [
+      defaultData = [
         { id: "1", user_id: "mock-user-id-12345", glasses_logged: 2, timestamp: new Date().toISOString() },
         { id: "2", user_id: "mock-user-id-12345", glasses_logged: 1, timestamp: new Date(Date.now() - 3600000).toISOString() }
       ];
-    }
-    if (table === 'meals') {
-      return [
+    } else if (table === 'meals') {
+      defaultData = [
         { id: "1", user_id: "mock-user-id-12345", meal_name: "Oatmeal with Bananas", meal_type: "Breakfast", total_calories: 380, consumed_at: new Date().toISOString() },
         { id: "2", user_id: "mock-user-id-12345", meal_name: "Grilled Chicken Salad", meal_type: "Lunch", total_calories: 520, consumed_at: new Date(Date.now() - 14400000).toISOString() }
       ];
+    } else if (table === 'mood_logs') {
+      defaultData = [
+        { id: "1", user_id: "mock-user-id-12345", mood: 4, energy_level: 4, stress_level: 3, notes: "Felt productive", date: new Date().toISOString().split('T')[0] }
+      ];
     }
-    return [];
+    localStorage.setItem(key, JSON.stringify(defaultData));
+    return defaultData;
   }
 }
 
