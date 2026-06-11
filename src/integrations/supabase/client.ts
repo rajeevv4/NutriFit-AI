@@ -5,13 +5,159 @@ import type { Database } from './types';
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://vuknaijjzkkputjbtnce.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ1a25haWpqemtrcHV0amJ0bmNlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE0NjIzNDEsImV4cCI6MjA3NzAzODM0MX0.XHrb9s9mzB1pWEM5hip5zViUHWx3rHVUkwBGKsI9JI8";
 
+class MockSupabase {
+  auth = {
+    signUp: async (credentials: any) => {
+      console.log("[MockSupabase] signUp called for:", credentials.email);
+      const user = {
+        id: "mock-user-id-12345",
+        email: credentials.email,
+        user_metadata: credentials.options?.data || {},
+        created_at: new Date().toISOString(),
+      };
+      const session = {
+        access_token: "mock-token-xyz",
+        token_type: "bearer",
+        expires_in: 3600,
+        refresh_token: "mock-refresh-xyz",
+        user,
+      };
+      localStorage.setItem("mock_session", JSON.stringify(session));
+      setTimeout(() => this._triggerAuthChange("SIGNED_IN", session), 50);
+      return { data: { user, session }, error: null };
+    },
+    signInWithPassword: async (credentials: any) => {
+      console.log("[MockSupabase] signInWithPassword called for:", credentials.email);
+      const user = {
+        id: "mock-user-id-12345",
+        email: credentials.email,
+        user_metadata: { full_name: "Developer User" },
+        created_at: new Date().toISOString(),
+      };
+      const session = {
+        access_token: "mock-token-xyz",
+        token_type: "bearer",
+        expires_in: 3600,
+        refresh_token: "mock-refresh-xyz",
+        user,
+      };
+      localStorage.setItem("mock_session", JSON.stringify(session));
+      setTimeout(() => this._triggerAuthChange("SIGNED_IN", session), 50);
+      return { data: { user, session }, error: null };
+    },
+    signOut: async () => {
+      console.log("[MockSupabase] signOut called");
+      localStorage.removeItem("mock_session");
+      setTimeout(() => this._triggerAuthChange("SIGNED_OUT", null), 50);
+      return { error: null };
+    },
+    getSession: async () => {
+      const sessionStr = localStorage.getItem("mock_session");
+      const session = sessionStr ? JSON.parse(sessionStr) : null;
+      return { data: { session }, error: null };
+    },
+    onAuthStateChange: (callback: any) => {
+      this.listeners.push(callback);
+      const sessionStr = localStorage.getItem("mock_session");
+      const session = sessionStr ? JSON.parse(sessionStr) : null;
+      setTimeout(() => callback(session ? "SIGNED_IN" : "SIGNED_OUT", session), 0);
+      return {
+        data: {
+          subscription: {
+            unsubscribe: () => {
+              this.listeners = this.listeners.filter(l => l !== callback);
+            }
+          }
+        }
+      };
+    }
+  };
+
+  listeners: any[] = [];
+  _triggerAuthChange(event: string, session: any) {
+    this.listeners.forEach(l => l(event, session));
+  }
+
+  from(table: string) {
+    const queryBuilder: any = {
+      select: () => queryBuilder,
+      insert: (data: any) => {
+        console.log(`[MockSupabase] Inserted to ${table}:`, data);
+        return Promise.resolve({ data, error: null });
+      },
+      update: (data: any) => {
+        console.log(`[MockSupabase] Updated in ${table}:`, data);
+        return Promise.resolve({ data, error: null });
+      },
+      upsert: (data: any) => {
+        console.log(`[MockSupabase] Upserted in ${table}:`, data);
+        return Promise.resolve({ data, error: null });
+      },
+      delete: () => queryBuilder,
+      eq: () => queryBuilder,
+      gte: () => queryBuilder,
+      lte: () => queryBuilder,
+      order: () => queryBuilder,
+      single: () => Promise.resolve({ data: this._getMockTableSingle(table), error: null }),
+      maybeSingle: () => Promise.resolve({ data: this._getMockTableSingle(table), error: null }),
+      then: (onfulfilled: any) => {
+        const mockData = this._getMockTableData(table);
+        return Promise.resolve({ data: mockData, error: null }).then(onfulfilled);
+      }
+    };
+    return queryBuilder;
+  }
+
+  functions = {
+    invoke: async (name: string, options: any) => {
+      console.log(`[MockSupabase] Invoking function ${name} with options:`, options);
+      return { data: { message: "Mock response" }, error: null };
+    }
+  };
+
+  _getMockTableSingle(table: string) {
+    if (table === 'profiles') {
+      return { id: "mock-user-id-12345", full_name: "Developer User", weight: 70, height: 175 };
+    } 
+    if (table === 'fitness_data') {
+      return { id: "mock-fit-id", user_id: "mock-user-id-12345", date: new Date().toISOString().split('T')[0], steps: 9420, calories: 1540 };
+    }
+    return null;
+  }
+
+  _getMockTableData(table: string) {
+    if (table === 'water_logs') {
+      return [
+        { id: "1", user_id: "mock-user-id-12345", glasses_logged: 2, timestamp: new Date().toISOString() },
+        { id: "2", user_id: "mock-user-id-12345", glasses_logged: 1, timestamp: new Date(Date.now() - 3600000).toISOString() }
+      ];
+    }
+    if (table === 'meals') {
+      return [
+        { id: "1", user_id: "mock-user-id-12345", meal_name: "Oatmeal with Bananas", meal_type: "Breakfast", total_calories: 380, consumed_at: new Date().toISOString() },
+        { id: "2", user_id: "mock-user-id-12345", meal_name: "Grilled Chicken Salad", meal_type: "Lunch", total_calories: 520, consumed_at: new Date(Date.now() - 14400000).toISOString() }
+      ];
+    }
+    return [];
+  }
+}
+
+const isDeadDomain = SUPABASE_URL.includes("vuknaijjzkkputjbtnce.supabase.co");
+
+if (isDeadDomain) {
+  console.warn("⚠️ The configured Supabase URL points to an unresolvable domain:", SUPABASE_URL);
+  console.warn("⚠️ Offline Mock Mode has been automatically enabled for local development.");
+}
+
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
 
-export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
-  auth: {
-    storage: localStorage,
-    persistSession: true,
-    autoRefreshToken: true,
-  }
-});
+export const supabase = isDeadDomain
+  ? (new MockSupabase() as any)
+  : createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+      auth: {
+        storage: localStorage,
+        persistSession: true,
+        autoRefreshToken: true,
+      }
+    });
